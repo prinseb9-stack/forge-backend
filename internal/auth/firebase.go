@@ -18,26 +18,34 @@ var (
 	firestoreClient *firestore.Client
 )
 
-// InitFirebaseAdmin initializes the Firebase Admin SDK with Auth and Firestore
+// InitFirebaseAdmin initializes the Firebase Admin SDK (Auth + Firestore)
+//
+// Credential sources (in priority order):
+//  1. FIREBASE_CREDENTIALS env var (JSON string) — for cloud deploys
+//  2. GOOGLE_APPLICATION_CREDENTIALS env var (file path) — for local dev
+//  3. ./firebase-service-account.json (file) — for local dev
+//  4. Application Default Credentials
 func InitFirebaseAdmin() error {
 	ctx := context.Background()
 
-	// Try to get credentials from environment
-	credPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	var opt option.ClientOption
 
-	if credPath != "" {
+	// Priority 1: FIREBASE_CREDENTIALS env var (JSON string)
+	if jsonCreds := os.Getenv("FIREBASE_CREDENTIALS"); jsonCreds != "" {
+		log.Println("Using Firebase credentials from FIREBASE_CREDENTIALS env var")
+		opt = option.WithCredentialsJSON([]byte(jsonCreds))
+	} else if credPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"); credPath != "" {
+		// Priority 2: GOOGLE_APPLICATION_CREDENTIALS env var (file path)
 		log.Printf("Using Firebase credentials from: %s", credPath)
 		opt = option.WithCredentialsFile(credPath)
+	} else if _, err := os.Stat("./firebase-service-account.json"); err == nil {
+		// Priority 3: Local file
+		log.Println("Using Firebase credentials from: ./firebase-service-account.json")
+		opt = option.WithCredentialsFile("./firebase-service-account.json")
 	} else {
-		defaultPath := "./firebase-service-account.json"
-		if _, err := os.Stat(defaultPath); err == nil {
-			log.Printf("Using Firebase credentials from: %s", defaultPath)
-			opt = option.WithCredentialsFile(defaultPath)
-		} else {
-			log.Println("No explicit Firebase credentials found, using Application Default Credentials")
-			opt = nil
-		}
+		// Priority 4: Application Default Credentials
+		log.Println("No explicit Firebase credentials found, using Application Default Credentials")
+		opt = nil
 	}
 
 	var err error
@@ -66,7 +74,7 @@ func InitFirebaseAdmin() error {
 	return nil
 }
 
-// VerifiedUser contains verified identity information from Firebase
+// VerifiedUser contains verified identity info from Firebase
 type VerifiedUser struct {
 	UID         string
 	Email       string
@@ -74,7 +82,6 @@ type VerifiedUser struct {
 }
 
 // VerifyIDToken verifies a Firebase ID token and returns verified user information
-// The email and display name come from Firebase Auth (server-side), NOT from client headers
 func VerifyIDToken(ctx context.Context, idToken string) (*VerifiedUser, error) {
 	if authClient == nil {
 		return nil, fmt.Errorf("Firebase Auth client not initialized")
@@ -86,11 +93,8 @@ func VerifyIDToken(ctx context.Context, idToken string) (*VerifiedUser, error) {
 		return nil, fmt.Errorf("invalid or expired authentication token")
 	}
 
-	// Get verified email from token claims
 	email, _ := token.Claims["email"].(string)
 
-	// Try to get display name from Firebase Auth user record (server-side)
-	// This is SAFE - comes from Firebase, not from client headers
 	displayName := ""
 	if userRecord, err := authClient.GetUser(ctx, token.UID); err == nil {
 		displayName = userRecord.DisplayName
@@ -116,9 +120,9 @@ func GetFirestoreClient() *firestore.Client {
 	return firestoreClient
 }
 
-// IsInitialized returns true if Firebase Admin is initialized
+// IsInitialized returns true if Firestore is initialized
 func IsInitialized() bool {
-	return authClient != nil && firestoreClient != nil
+	return firestoreClient != nil
 }
 
 // Close closes the Firestore client
