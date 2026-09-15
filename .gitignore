@@ -1,0 +1,9 @@
+.env
+.env1
+.env2
+.env3
+*.env
+firebase-service-account.json
+*.bak
+forge-api
+backend
