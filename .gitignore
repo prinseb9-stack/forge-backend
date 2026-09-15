@@ -1,9 +1,25 @@
+# Environment files (sensitive)
 .env
 .env1
 .env2
 .env3
 *.env
+*.env.local
+
+# Firebase credentials (never commit!)
 firebase-service-account.json
-*.bak
+firebase-service-account.example.json
+*.key.json
+*credential*.json
+
+# Build artifacts
 forge-api
 backend
+main
+
+# Backups
+*.bak
+*.backup
+
+# OS files
+.DS_Store
