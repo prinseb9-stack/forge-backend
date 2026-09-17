@@ -526,3 +526,119 @@ func (s *FirestoreService) SaveTextGeneration(
 
 	return nil
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SUBSCRIPTION MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════
+
+// SavePendingSubscription records a pending checkout so the webhook can
+// identify which user + plan it belongs to.
+func (s *FirestoreService) SavePendingSubscription(
+	ctx context.Context,
+	uid, txRef, planName, planID string,
+	amount float64,
+) error {
+	if s.client == nil {
+		return fmt.Errorf("Firestore client is not initialized")
+	}
+
+	docRef := s.client.
+		Collection("pendingSubscriptions").
+		Doc(txRef)
+
+	doc := map[string]interface{}{
+		"uid":       uid,
+		"txRef":     txRef,
+		"planName":  planName,
+		"planID":    planID,
+		"amount":    amount,
+		"createdAt": firestore.ServerTimestamp,
+	}
+
+	_, err := docRef.Set(ctx, doc)
+	if err != nil {
+		return fmt.Errorf("failed to save pending subscription: %w", err)
+	}
+	return nil
+}
+
+// FindUserByTxRef looks up the pending subscription to find the user and plan
+func (s *FirestoreService) FindUserByTxRef(ctx context.Context, txRef string) (string, string, error) {
+	if s.client == nil {
+		return "", "", fmt.Errorf("Firestore client is not initialized")
+	}
+
+	doc, err := s.client.
+		Collection("pendingSubscriptions").
+		Doc(txRef).
+		Get(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to load pending subscription: %w", err)
+	}
+
+	var data struct {
+		UID      string `firestore:"uid"`
+		PlanName string `firestore:"planName"`
+	}
+	if err := doc.DataTo(&data); err != nil {
+		return "", "", fmt.Errorf("failed to parse pending subscription: %w", err)
+	}
+
+	return data.UID, data.PlanName, nil
+}
+
+// ActivateSubscription updates the user's plan and stores the subscription details
+func (s *FirestoreService) ActivateSubscription(
+	ctx context.Context,
+	uid string,
+	sub models.Subscription,
+) error {
+	if s.client == nil {
+		return fmt.Errorf("Firestore client is not initialized")
+	}
+	if uid == "" {
+		return fmt.Errorf("uid is required")
+	}
+
+	userRef := s.client.Collection(usersCollection).Doc(uid)
+
+	// Map plan name to internal Plan
+	var newPlan models.Plan
+	switch sub.PlanName {
+	case "pro":
+		newPlan = models.PlanPro
+	case "higher_pro":
+		newPlan = models.PlanHigherPro
+	default:
+		return fmt.Errorf("unknown plan name: %s", sub.PlanName)
+	}
+
+	// Set subscription timestamps
+	sub.CreatedAt = time.Now().UTC()
+	sub.UpdatedAt = time.Now().UTC()
+
+	// Update user with new plan + subscription + reset usage periods
+	update := map[string]interface{}{
+		"plan":         string(newPlan),
+		"subscription": sub,
+		"textGeneration": map[string]interface{}{
+			"usageCount":      0,
+			"maxUsage":        models.DefaultMaxUsage(newPlan),
+			"periodStartedAt": time.Now().UTC(),
+			"periodEndsAt":    time.Now().UTC().Add(models.PeriodDuration),
+		},
+		"imageGeneration": map[string]interface{}{
+			"usageCount":      0,
+			"maxUsage":        models.DefaultImageMaxUsage(newPlan),
+			"periodStartedAt": time.Now().UTC(),
+			"periodEndsAt":    time.Now().UTC().Add(models.PeriodDuration),
+		},
+		"updatedAt": firestore.ServerTimestamp,
+	}
+
+	_, err := userRef.Set(ctx, update, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("failed to activate subscription: %w", err)
+	}
+	return nil
+}

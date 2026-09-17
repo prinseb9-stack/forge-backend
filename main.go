@@ -13,6 +13,7 @@ import (
 	"forge-backend/internal/config"
 	"forge-backend/internal/handlers"
 	forgemiddleware "forge-backend/internal/middleware"
+	"forge-backend/internal/models"
 	"forge-backend/internal/services"
 )
 
@@ -21,30 +22,26 @@ func main() {
 
 	if devBypass {
 		log.Println("⚠️  DEV_AUTH_BYPASS is ENABLED - Token verification is DISABLED")
-		log.Println("⚠️  Firestore will still be initialized for user/plan data")
 	}
 
-	// ALWAYS initialize Firebase Admin (Auth + Firestore)
+	// Initialize Firebase Admin
 	log.Println("🔐 Initializing Firebase Admin SDK...")
 	if err := auth.InitFirebaseAdmin(); err != nil {
-		log.Fatalf("🔥 Firebase Admin initialization failed: %v\n\n"+
-			"Firebase Admin (Firestore) is required even in DEV_AUTH_BYPASS mode.\n"+
-			"Set GOOGLE_APPLICATION_CREDENTIALS or place firebase-service-account.json in the backend directory.",
-			err)
+		log.Fatalf("🔥 Firebase Admin initialization failed: %v", err)
 	}
 	log.Println("✅ Firebase Admin SDK initialized successfully")
 
 	if auth.GetFirestoreClient() == nil {
-		log.Fatal("🔥 Firestore client is nil after initialization - cannot continue")
+		log.Fatal("🔥 Firestore client is nil after initialization")
 	}
 
-	// Load ALL provider credentials
+	// Load config
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Create provider factory
+	// Create provider factory (text)
 	factory := services.NewProviderFactory(
 		cfg.GroqAPIKey,
 		cfg.GroqBaseURL,
@@ -61,17 +58,39 @@ func main() {
 	}
 	log.Println("✅ Firestore service initialized")
 
-	// Initialize handler
+	// Create handlers
 	generateHandler := handlers.NewGenerateHandler(factory, firestoreService)
 
+	agnesImageService := services.NewAgnesImageService(cfg.AgnesAPIKey, cfg.AgnesBaseURL)
+	generateImageHandler := handlers.NewGenerateImageHandler(agnesImageService, firestoreService)
+
+	meHandler := handlers.NewMeHandler(firestoreService)
+
+	// ─── Flutterwave payments ───
+	flutterwaveService := services.NewFlutterwaveService(services.FlutterwaveConfig{
+		PublicKey:     cfg.FlutterwavePublicKey,
+		SecretKey:     cfg.FlutterwaveSecretKey,
+		EncryptionKey: cfg.FlutterwaveEncryptionKey,
+		WebhookSecret: cfg.FlutterwaveWebhookSecret,
+		Env:           cfg.FlutterwaveEnv,
+		PlanPro:       cfg.FlutterwavePlanPro,
+		PlanHigherPro: cfg.FlutterwavePlanHigherPro,
+	})
+
+	// Register Flutterwave plan ID → internal plan mapping
+	models.RegisterPlanMapping(map[string]models.Plan{
+		cfg.FlutterwavePlanPro:       models.PlanPro,
+		cfg.FlutterwavePlanHigherPro: models.PlanHigherPro,
+	})
+
+	paymentsHandler := handlers.NewPaymentsHandler(flutterwaveService, firestoreService)
+
+	// ─── Routes ───
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(forgemiddleware.CORS)
-	// Initialize image handler
-	agnesImageService := services.NewAgnesImageService(cfg.AgnesAPIKey, cfg.AgnesBaseURL)
-	generateImageHandler := handlers.NewGenerateImageHandler(agnesImageService, firestoreService)
 
 	// Public routes
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -83,15 +102,20 @@ func main() {
 		})
 	})
 
-	// Protected routes
-	// Initialize /api/me handler
-	meHandler := handlers.NewMeHandler(firestoreService)
+	// Flutterwave webhook — public, verified by signature header
+	r.Post("/api/payments/webhook", paymentsHandler.HandleWebhook)
 
+	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(forgemiddleware.RequireAuth)
+
 		r.Get("/api/me", meHandler.ServeHTTP)
 		r.Post("/api/generate", generateHandler.ServeHTTP)
 		r.Post("/api/generate-image", generateImageHandler.ServeHTTP)
+
+		// Payments
+		r.Post("/api/payments/checkout", paymentsHandler.HandleCheckout)
+		r.Get("/api/subscription", paymentsHandler.HandleGetSubscription)
 	})
 
 	port := cfg.Port
@@ -100,9 +124,10 @@ func main() {
 	}
 
 	log.Printf("🔥 FORGE API running on http://localhost:%s", port)
-	log.Println("🔐 Protected routes: /api/generate")
-	log.Println("🌐 Public routes: /api/health")
-	log.Println("🤖 AI Provider: Groq (primary) + Agnes (fallback)")
+	log.Println("🔐 Protected: /api/me, /api/generate, /api/generate-image, /api/payments/checkout, /api/subscription")
+	log.Println("🌐 Public: /api/health, /api/payments/webhook")
+	log.Println("🤖 AI: Groq primary + Agnes fallback")
+	log.Println("💳 Payments: Flutterwave")
 
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatal(err)

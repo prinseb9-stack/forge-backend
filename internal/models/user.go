@@ -40,6 +40,8 @@ type User struct {
 	ImageGeneration UsagePeriod `firestore:"imageGeneration" json:"imageGeneration"`
 	VideoGeneration UsagePeriod `firestore:"videoGeneration" json:"videoGeneration"`
 
+	Subscription *Subscription `firestore:"subscription,omitempty" json:"subscription,omitempty"`
+
 	CreatedAt time.Time `firestore:"createdAt" json:"createdAt"`
 	UpdatedAt time.Time `firestore:"updatedAt" json:"updatedAt"`
 }
