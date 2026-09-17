@@ -86,7 +86,7 @@ func (h *PaymentsHandler) HandleCheckout(w http.ResponseWriter, r *http.Request)
 	txRef := services.GenerateTxRef(uid)
 
 	// Redirect back to frontend after payment
-	redirectURL := "https://forge-frontend.prinseb9-9de.workers.dev/payment/callback?tx_ref=" + txRef
+	redirectURL := "https://forge777.netlify.app/payment/callback?tx_ref=" + txRef
 
 	checkoutURL, err := h.flutterwave.InitializeCheckout(
 		r.Context(),
