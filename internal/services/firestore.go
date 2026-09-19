@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/uuid"
+	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -640,5 +641,140 @@ func (s *FirestoreService) ActivateSubscription(
 	if err != nil {
 		return fmt.Errorf("failed to activate subscription: %w", err)
 	}
+	return nil
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCHEDULED POSTS
+// ═══════════════════════════════════════════════════════════════════
+
+const scheduledPostsCol = "scheduledPosts"
+
+// CreateScheduledPost creates a new scheduled post
+func (s *FirestoreService) CreateScheduledPost(
+	ctx context.Context,
+	uid, platform, content string,
+	scheduledFor time.Time,
+	notes string,
+) (*models.ScheduledPost, error) {
+	if s.client == nil {
+		return nil, fmt.Errorf("Firestore client is not initialized")
+	}
+	if uid == "" {
+		return nil, fmt.Errorf("uid is required")
+	}
+
+	postID := uuid.NewString()
+	postRef := s.client.
+		Collection(usersCollection).
+		Doc(uid).
+		Collection(scheduledPostsCol).
+		Doc(postID)
+
+	now := time.Now().UTC()
+	post := models.ScheduledPost{
+		ID:           postID,
+		UID:          uid,
+		Platform:     platform,
+		Content:      content,
+		ScheduledFor: scheduledFor.UTC(),
+		Status:       models.ScheduleStatusPending,
+		Notes:        notes,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	_, err := postRef.Set(ctx, post)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save scheduled post: %w", err)
+	}
+
+	return &post, nil
+}
+
+// ListScheduledPosts returns all scheduled posts for a user,
+// sorted by scheduledFor ascending.
+func (s *FirestoreService) ListScheduledPosts(
+	ctx context.Context,
+	uid string,
+) ([]models.ScheduledPost, error) {
+	if s.client == nil {
+		return nil, fmt.Errorf("Firestore client is not initialized")
+	}
+	if uid == "" {
+		return nil, fmt.Errorf("uid is required")
+	}
+
+	iter := s.client.
+		Collection(usersCollection).
+		Doc(uid).
+		Collection(scheduledPostsCol).
+		OrderBy("scheduledFor", firestore.Asc).
+		Documents(ctx)
+
+	defer iter.Stop()
+
+	var posts []models.ScheduledPost
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate scheduled posts: %w", err)
+		}
+		var p models.ScheduledPost
+		if err := doc.DataTo(&p); err != nil {
+			continue
+		}
+		// Only include pending + posted + failed, exclude cancelled
+		if p.Status == models.ScheduleStatusCancelled {
+			continue
+		}
+		posts = append(posts, p)
+	}
+
+	return posts, nil
+}
+
+// DeleteScheduledPost removes a scheduled post (user must own it)
+func (s *FirestoreService) DeleteScheduledPost(
+	ctx context.Context,
+	uid, postID string,
+) error {
+	if s.client == nil {
+		return fmt.Errorf("Firestore client is not initialized")
+	}
+	if uid == "" || postID == "" {
+		return fmt.Errorf("uid and postID are required")
+	}
+
+	// Verify ownership: read the doc first, then delete
+	postRef := s.client.
+		Collection(usersCollection).
+		Doc(uid).
+		Collection(scheduledPostsCol).
+		Doc(postID)
+
+	doc, err := postRef.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("post not found: %w", err)
+	}
+
+	var post models.ScheduledPost
+	if err := doc.DataTo(&post); err != nil {
+		return fmt.Errorf("failed to parse post: %w", err)
+	}
+
+	if post.UID != uid {
+		return fmt.Errorf("post does not belong to user")
+	}
+
+	// Hard delete
+	_, err = postRef.Delete(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to delete scheduled post: %w", err)
+	}
+
 	return nil
 }

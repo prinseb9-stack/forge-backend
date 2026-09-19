@@ -65,6 +65,7 @@ func main() {
 	generateImageHandler := handlers.NewGenerateImageHandler(agnesImageService, firestoreService)
 
 	meHandler := handlers.NewMeHandler(firestoreService)
+	scheduleHandler := handlers.NewScheduleHandler(firestoreService)
 
 	// ─── Flutterwave payments ───
 	flutterwaveService := services.NewFlutterwaveService(services.FlutterwaveConfig{
@@ -109,6 +110,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(forgemiddleware.RequireAuth)
 
+		// User + generation
 		r.Get("/api/me", meHandler.ServeHTTP)
 		r.Post("/api/generate", generateHandler.ServeHTTP)
 		r.Post("/api/generate-image", generateImageHandler.ServeHTTP)
@@ -116,6 +118,11 @@ func main() {
 		// Payments
 		r.Post("/api/payments/checkout", paymentsHandler.HandleCheckout)
 		r.Get("/api/subscription", paymentsHandler.HandleGetSubscription)
+
+		// Scheduled posts
+		r.Post("/api/scheduled", scheduleHandler.HandleCreate)
+		r.Get("/api/scheduled", scheduleHandler.HandleList)
+		r.Delete("/api/scheduled/{id}", scheduleHandler.HandleDelete)
 	})
 
 	port := cfg.Port
@@ -124,7 +131,7 @@ func main() {
 	}
 
 	log.Printf("🔥 FORGE API running on http://localhost:%s", port)
-	log.Println("🔐 Protected: /api/me, /api/generate, /api/generate-image, /api/payments/checkout, /api/subscription")
+	log.Println("🔐 Protected: /api/me, /api/generate, /api/generate-image, /api/payments/*, /api/scheduled/*")
 	log.Println("🌐 Public: /api/health, /api/payments/webhook")
 	log.Println("🤖 AI: Groq primary + Agnes fallback")
 	log.Println("💳 Payments: Flutterwave")
