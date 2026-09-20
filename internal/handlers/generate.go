@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 
 	"forge-backend/internal/middleware"
@@ -199,6 +200,31 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := validatePlatforms(req.Platforms, result.Results); err != nil {
+		// ─── TEMPORARY DIAGNOSTIC (remove after capture) ───
+		{
+			normalizedRequested := make([]string, len(req.Platforms))
+			for i, p := range req.Platforms {
+				normalizedRequested[i] = normalizePlatformName(p)
+			}
+			normalizedReturned := make([]string, len(result.Results))
+			for i, r := range result.Results {
+				normalizedReturned[i] = normalizePlatformName(r.Platform)
+			}
+			sort.Strings(normalizedRequested)
+			sort.Strings(normalizedReturned)
+
+			log.Printf(
+				"🔬 PLATFORM_VALIDATION_FAILED uid=%s err=%q requested_raw=%v requested_norm=%v returned_raw=%v returned_norm=%v",
+				uid,
+				err.Error(),
+				req.Platforms,
+				normalizedRequested,
+				platformsOf(result.Results),
+				normalizedReturned,
+			)
+		}
+		// ─── END TEMPORARY DIAGNOSTIC ───
+
 		refund("platform_validation_failed")
 		jsonResponse(w, http.StatusInternalServerError, GenerateResponse{
 			Success: false, Error: "AI response did not match requested platforms", Code: "AI_RESPONSE_INVALID",
@@ -364,4 +390,13 @@ func normalizePlatformName(platform string) string {
 	default:
 		return platform
 	}
+}
+
+// ─── TEMPORARY DIAGNOSTIC HELPER (remove after capture) ───
+func platformsOf(results []services.PlatformResult) []string {
+	out := make([]string, len(results))
+	for i, r := range results {
+		out[i] = r.Platform
+	}
+	return out
 }
