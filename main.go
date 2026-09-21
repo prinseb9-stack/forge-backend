@@ -11,6 +11,7 @@ import (
 
 	"forge-backend/internal/auth"
 	"forge-backend/internal/config"
+	_ "forge-backend/internal/connectors/all"
 	"forge-backend/internal/handlers"
 	forgemiddleware "forge-backend/internal/middleware"
 	"forge-backend/internal/models"
@@ -65,6 +66,7 @@ func main() {
 	generateImageHandler := handlers.NewGenerateImageHandler(agnesImageService, firestoreService)
 
 	meHandler := handlers.NewMeHandler(firestoreService)
+	connectorsHandler := handlers.NewConnectorsHandler()
 	scheduleHandler := handlers.NewScheduleHandler(firestoreService)
 
 	// ─── Flutterwave payments ───
@@ -102,6 +104,9 @@ func main() {
 			"status":  "online",
 		})
 	})
+
+	// Public — connector catalog (metadata only, no auth, no user data)
+	r.Get("/api/connectors", connectorsHandler.ServeHTTP)
 
 	// Flutterwave webhook — public, verified by signature header
 	r.Post("/api/payments/webhook", paymentsHandler.HandleWebhook)

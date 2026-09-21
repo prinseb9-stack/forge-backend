@@ -1,0 +1,21 @@
+package linkedin
+
+import "forge-backend/internal/connectors"
+
+func init() { connectors.Register(&Connector{}) }
+
+type Connector struct{}
+
+func (c *Connector) ID() string                    { return "linkedin" }
+func (c *Connector) Name() string                  { return "LinkedIn" }
+func (c *Connector) Icon() string                  { return "💼" }
+func (c *Connector) Description() string           { return "Professional posts and business content." }
+func (c *Connector) Category() connectors.Category { return connectors.CategoryProfessional }
+func (c *Connector) Capabilities() connectors.Capabilities {
+	return connectors.Capabilities{
+		Connect:   connectors.StatusComingSoon,
+		Publish:   connectors.StatusPlanned,
+		Schedule:  connectors.StatusPlanned,
+		Analytics: connectors.StatusPlanned,
+	}
+}
