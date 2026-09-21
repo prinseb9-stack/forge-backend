@@ -58,42 +58,48 @@ func (s *GroqService) Generate(
 
 	platformList := strings.Join(platforms, ", ")
 
+	// Build a guidelines section that ONLY mentions the requested platforms.
+	// This prevents the model from treating unrelated guidelines as a request
+	// to generate content for every platform FORGE supports.
+	requestedGuidelines := buildPlatformGuidelines(platforms)
+
 	prompt := fmt.Sprintf(`
 You are FORGE, an expert content repurposing AI.
 
-CRITICAL: You MUST generate content for ALL of these platforms: %s
-You MUST return EXACTLY %d results - one for EACH platform.
+REQUESTED PLATFORMS (this is the COMPLETE and EXCLUSIVE list):
+[%s]
+
+You MUST generate content for EXACTLY these platforms and NO others.
+You MUST return EXACTLY %d results - one result for EACH requested platform.
+Do NOT generate results for any platform that is not in the REQUESTED PLATFORMS list above.
 
 Transform the source content below into high-quality, platform-specific content.
 
 SOURCE CONTENT:
 %s
 
-Platform-specific guidelines:
-- X/Twitter: Keep under 280 characters, punchy, engaging, use relevant hashtags
-- Instagram: Create an engaging caption with emojis, use line breaks, add relevant hashtags
-- Facebook: Conversational tone, encourage engagement, use questions
-- LinkedIn: Professional but human tone, focus on insights and value
-- Blog: Structured format with headings, 300-500 words, SEO-friendly
-- Newsletter: Personal tone, storytelling approach, clear value proposition
+PLATFORM GUIDELINES (reference only — these do NOT add platforms to the requested list):
+%s
+
+IMPORTANT: The guidelines above are ONLY for formatting the content of the requested platforms. They are NOT a request to generate content for every platform mentioned. If only one platform is requested, return exactly one result.
 
 RETURN FORMAT - STRICT JSON (no markdown, no code fences):
 {
   "results": [
-    {"platform": "platform_name", "content": "generated content for this platform"},
     {"platform": "platform_name", "content": "generated content for this platform"}
   ]
 }
 
 RULES:
-1. Return EXACTLY %d results (one for EACH platform: %s)
-2. Do NOT add extra platforms or omit any
-3. Do NOT wrap in markdown code blocks
-4. Return ONLY valid JSON
-5. Escape newlines inside strings as \n
-6. Adapt writing style to each platform
-7. Preserve the original meaning
-`, platformList, len(platforms), sourceContent, len(platforms), platformList)
+1. Return EXACTLY %d result(s) — one for EACH requested platform: %s
+2. Do NOT add extra platforms
+3. Do NOT omit any requested platform
+4. Do NOT wrap in markdown code blocks
+5. Return ONLY valid JSON
+6. Escape newlines inside strings as \n
+7. Adapt writing style to each requested platform
+8. Preserve the original meaning
+`, platformList, len(platforms), sourceContent, requestedGuidelines, len(platforms), platformList)
 
 	requestBody := groqRequest{
 		Model: "openai/gpt-oss-120b",
@@ -181,4 +187,41 @@ func (s *GroqService) doRequest(url string, body []byte) (string, error) {
 	}
 
 	return result.Choices[0].Message.Content, nil
+}
+
+// buildPlatformGuidelines returns formatting guidelines for ONLY the requested
+// platforms. This prevents the prompt from listing guidelines for platforms
+// the user did not ask for, which previously caused the model to generate
+// content for every platform in the FORGE catalog.
+func buildPlatformGuidelines(platforms []string) string {
+	var lines []string
+	for _, raw := range platforms {
+		p := strings.ToLower(strings.TrimSpace(raw))
+		switch p {
+		case "x", "twitter":
+			lines = append(lines, "- x: Keep under 280 characters, punchy, engaging, use relevant hashtags")
+		case "instagram", "ig":
+			lines = append(lines, "- instagram: Create an engaging caption with emojis, use line breaks, add relevant hashtags")
+		case "facebook", "fb":
+			lines = append(lines, "- facebook: Conversational tone, encourage engagement, use questions")
+		case "linkedin", "li":
+			lines = append(lines, "- linkedin: Professional but human tone, focus on insights and value")
+		case "blog", "blogs":
+			lines = append(lines, "- blog: Structured format with headings, 300-500 words, SEO-friendly")
+		case "newsletter", "newsletters":
+			lines = append(lines, "- newsletter: Personal tone, storytelling approach, clear value proposition")
+		case "threads":
+			lines = append(lines, "- threads: Short-form conversational tone, concise, engaging")
+		case "tiktok":
+			lines = append(lines, "- tiktok: Casual, energetic tone suited to short video captions")
+		case "youtube-shorts":
+			lines = append(lines, "- youtube-shorts: Short-form video description, punchy hook, minimal emojis")
+		case "pinterest":
+			lines = append(lines, "- pinterest: Inspirational, keyword-rich description suitable for pins")
+		}
+	}
+	if len(lines) == 0 {
+		return "- (no specific guidelines provided)"
+	}
+	return strings.Join(lines, "\n")
 }
