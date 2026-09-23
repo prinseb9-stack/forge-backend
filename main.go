@@ -12,6 +12,7 @@ import (
 	"forge-backend/internal/auth"
 	"forge-backend/internal/config"
 	_ "forge-backend/internal/connectors/all"
+	"forge-backend/internal/crypto"
 	"forge-backend/internal/handlers"
 	forgemiddleware "forge-backend/internal/middleware"
 	"forge-backend/internal/models"
@@ -52,8 +53,19 @@ func main() {
 		cfg.DeepSeekAPIKey,
 	)
 
+	// Initialize token encryption service (required for OAuth connections)
+	encryptionKey := os.Getenv("TOKEN_ENCRYPTION_KEY")
+	if encryptionKey == "" {
+		log.Fatal("TOKEN_ENCRYPTION_KEY environment variable is required (base64-encoded 32-byte key)")
+	}
+	encryptionService, err := crypto.NewEncryptionService(encryptionKey)
+	if err != nil {
+		log.Fatalf("Failed to initialize encryption service: %v", err)
+	}
+	log.Println("✅ Encryption service initialized")
+
 	// Create Firestore service
-	firestoreService, err := services.NewFirestoreService(auth.GetFirestoreClient())
+	firestoreService, err := services.NewFirestoreService(auth.GetFirestoreClient(), encryptionService)
 	if err != nil {
 		log.Fatalf("Failed to create Firestore service: %v", err)
 	}

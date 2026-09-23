@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"forge-backend/internal/crypto"
 	"forge-backend/internal/models"
 )
 
@@ -29,13 +30,17 @@ var (
 
 type FirestoreService struct {
 	client *firestore.Client
+	crypto *crypto.EncryptionService
 }
 
-func NewFirestoreService(client *firestore.Client) (*FirestoreService, error) {
+func NewFirestoreService(client *firestore.Client, encryption *crypto.EncryptionService) (*FirestoreService, error) {
 	if client == nil {
 		return nil, fmt.Errorf("Firestore client cannot be nil - Firebase Admin must be initialized")
 	}
-	return &FirestoreService{client: client}, nil
+	if encryption == nil {
+		return nil, fmt.Errorf("Encryption service cannot be nil")
+	}
+	return &FirestoreService{client: client, crypto: encryption}, nil
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -777,4 +782,205 @@ func (s *FirestoreService) DeleteScheduledPost(
 	}
 
 	return nil
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PLATFORM CONNECTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+const connectionsCol = "connections"
+
+// SaveConnection stores a user's connection to a platform, encrypting
+// any JWT fields at rest.
+//
+// The caller must supply a fully-populated Connection with plaintext
+// JWT values. This method encrypts them before writing.
+func (s *FirestoreService) SaveConnection(
+	ctx context.Context,
+	uid string,
+	conn *models.Connection,
+) error {
+	if s.client == nil {
+		return fmt.Errorf("Firestore client is not initialized")
+	}
+	if s.crypto == nil {
+		return fmt.Errorf("Encryption service is not initialized")
+	}
+	if uid == "" {
+		return fmt.Errorf("uid is required")
+	}
+	if conn == nil {
+		return fmt.Errorf("connection is required")
+	}
+	if conn.PlatformID == "" {
+		return fmt.Errorf("platformID is required")
+	}
+
+	// Encrypt tokens before writing
+	encAccess, err := s.crypto.Encrypt(conn.EncryptedAccessJwt)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt access token: %w", err)
+	}
+	encRefresh, err := s.crypto.Encrypt(conn.EncryptedRefreshJwt)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt refresh token: %w", err)
+	}
+
+	// Build the document with encrypted values. We use a nested map
+	// to avoid dotted-path issues with firestore.MergeAll.
+	doc := map[string]interface{}{
+		"platformId":          conn.PlatformID,
+		"did":                 conn.DID,
+		"handle":              conn.Handle,
+		"displayName":         conn.DisplayName,
+		"avatar":              conn.Avatar,
+		"encryptedAccessJwt":  encAccess,
+		"encryptedRefreshJwt": encRefresh,
+		"accessExpiresAt":     conn.AccessExpiresAt,
+		"status":              string(conn.Status),
+		"connectedAt":         conn.ConnectedAt,
+		"updatedAt":           firestore.ServerTimestamp,
+	}
+
+	ref := s.client.
+		Collection(usersCollection).
+		Doc(uid).
+		Collection(connectionsCol).
+		Doc(conn.PlatformID)
+
+	_, err = ref.Set(ctx, doc)
+	if err != nil {
+		return fmt.Errorf("failed to save connection: %w", err)
+	}
+
+	return nil
+}
+
+// GetConnection loads a connection and decrypts its JWT fields.
+//
+// The returned Connection has plaintext JWTs ready for use by the
+// caller. The caller is responsible for not logging or exposing them.
+func (s *FirestoreService) GetConnection(
+	ctx context.Context,
+	uid string,
+	platformID string,
+) (*models.Connection, error) {
+	if s.client == nil {
+		return nil, fmt.Errorf("Firestore client is not initialized")
+	}
+	if s.crypto == nil {
+		return nil, fmt.Errorf("Encryption service is not initialized")
+	}
+	if uid == "" || platformID == "" {
+		return nil, fmt.Errorf("uid and platformID are required")
+	}
+
+	ref := s.client.
+		Collection(usersCollection).
+		Doc(uid).
+		Collection(connectionsCol).
+		Doc(platformID)
+
+	doc, err := ref.Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("connection not found")
+		}
+		return nil, fmt.Errorf("failed to get connection: %w", err)
+	}
+
+	var conn models.Connection
+	if err := doc.DataTo(&conn); err != nil {
+		return nil, fmt.Errorf("failed to parse connection: %w", err)
+	}
+
+	// Decrypt tokens
+	access, err := s.crypto.Decrypt(conn.EncryptedAccessJwt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt access token: %w", err)
+	}
+	refresh, err := s.crypto.Decrypt(conn.EncryptedRefreshJwt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt refresh token: %w", err)
+	}
+	conn.EncryptedAccessJwt = access
+	conn.EncryptedRefreshJwt = refresh
+
+	return &conn, nil
+}
+
+// DeleteConnection removes a user's connection to a platform.
+//
+// Idempotent: deleting a non-existent connection returns nil.
+func (s *FirestoreService) DeleteConnection(
+	ctx context.Context,
+	uid string,
+	platformID string,
+) error {
+	if s.client == nil {
+		return fmt.Errorf("Firestore client is not initialized")
+	}
+	if uid == "" || platformID == "" {
+		return fmt.Errorf("uid and platformID are required")
+	}
+
+	ref := s.client.
+		Collection(usersCollection).
+		Doc(uid).
+		Collection(connectionsCol).
+		Doc(platformID)
+
+	_, err := ref.Delete(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to delete connection: %w", err)
+	}
+
+	return nil
+}
+
+// ListConnections returns all of a user's connections in their safe,
+// frontend-facing form. Tokens are never decrypted or returned here.
+func (s *FirestoreService) ListConnections(
+	ctx context.Context,
+	uid string,
+) ([]models.PublicConnection, error) {
+	if s.client == nil {
+		return nil, fmt.Errorf("Firestore client is not initialized")
+	}
+	if uid == "" {
+		return nil, fmt.Errorf("uid is required")
+	}
+
+	iter := s.client.
+		Collection(usersCollection).
+		Doc(uid).
+		Collection(connectionsCol).
+		Documents(ctx)
+
+	defer iter.Stop()
+
+	var out []models.PublicConnection
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate connections: %w", err)
+		}
+
+		var conn models.Connection
+		if err := doc.DataTo(&conn); err != nil {
+			return nil, fmt.Errorf("failed to parse connection %s: %w", doc.Ref.ID, err)
+		}
+
+		out = append(out, conn.ToPublic())
+	}
+
+	if out == nil {
+		out = []models.PublicConnection{}
+	}
+
+	return out, nil
 }
