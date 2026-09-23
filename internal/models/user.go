@@ -66,7 +66,7 @@ func DefaultImageMaxUsage(plan Plan) int {
 	case PlanFree:
 		return 0
 	case PlanPro:
-		return 30
+		return 5
 	case PlanHigherPro:
 		return -1
 	default:
