@@ -16,6 +16,7 @@ import (
 	"forge-backend/internal/handlers"
 	forgemiddleware "forge-backend/internal/middleware"
 	"forge-backend/internal/models"
+	"forge-backend/internal/oauth"
 	"forge-backend/internal/services"
 )
 
@@ -79,6 +80,11 @@ func main() {
 
 	meHandler := handlers.NewMeHandler(firestoreService)
 	connectorsHandler := handlers.NewConnectorsHandler()
+
+	// OAuth: Bluesky + connections
+	blueskyClient := oauth.NewBlueskyClient()
+	blueskyHandler := handlers.NewBlueskyHandler(blueskyClient, firestoreService)
+	connectionsHandler := handlers.NewConnectionsHandler(firestoreService)
 	scheduleHandler := handlers.NewScheduleHandler(firestoreService)
 
 	// ─── Flutterwave payments ───
@@ -140,6 +146,11 @@ func main() {
 		r.Post("/api/scheduled", scheduleHandler.HandleCreate)
 		r.Get("/api/scheduled", scheduleHandler.HandleList)
 		r.Delete("/api/scheduled/{id}", scheduleHandler.HandleDelete)
+
+		// OAuth connections
+		r.Post("/api/oauth/bluesky/connect", blueskyHandler.HandleConnect)
+		r.Post("/api/oauth/bluesky/disconnect", blueskyHandler.HandleDisconnect)
+		r.Get("/api/connections", connectionsHandler.ServeHTTP)
 	})
 
 	port := cfg.Port
@@ -148,7 +159,7 @@ func main() {
 	}
 
 	log.Printf("🔥 FORGE API running on http://localhost:%s", port)
-	log.Println("🔐 Protected: /api/me, /api/generate, /api/generate-image, /api/payments/*, /api/scheduled/*")
+	log.Println("🔐 Protected: /api/me, /api/generate, /api/generate-image, /api/payments/*, /api/scheduled/*, /api/oauth/*, /api/connections")
 	log.Println("🌐 Public: /api/health, /api/payments/webhook")
 	log.Println("🤖 AI: Groq primary + Agnes fallback")
 	log.Println("💳 Payments: Flutterwave")

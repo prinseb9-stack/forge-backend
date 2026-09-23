@@ -218,3 +218,65 @@ func (c *BlueskyClient) DeleteSession(
 
 	return fmt.Errorf("bluesky returned HTTP %d", resp.StatusCode)
 }
+
+// Profile holds a Bluesky user's public profile info.
+type Profile struct {
+	DID         string
+	Handle      string
+	DisplayName string
+	Avatar      string
+}
+
+// GetProfile fetches a user's profile by handle.
+//
+// Uses the app.bsky.actor.getProfile XRPC endpoint.
+// Failure here is non-fatal for connect flows — caller should just
+// proceed without a display name.
+func (c *BlueskyClient) GetProfile(
+	ctx context.Context,
+	accessJwt string,
+	handle string,
+) (*Profile, error) {
+	if accessJwt == "" {
+		return nil, fmt.Errorf("access JWT is required")
+	}
+	if handle == "" {
+		return nil, fmt.Errorf("handle is required")
+	}
+
+	url := c.baseURL + "/xrpc/app.bsky.actor.getProfile?actor=" + handle
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create profile request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessJwt)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("profile request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("bluesky profile returned HTTP %d", resp.StatusCode)
+	}
+
+	var raw struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName"`
+		Avatar      string `json:"avatar"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("failed to decode profile: %w", err)
+	}
+
+	return &Profile{
+		DID:         raw.DID,
+		Handle:      raw.Handle,
+		DisplayName: raw.DisplayName,
+		Avatar:      raw.Avatar,
+	}, nil
+}
