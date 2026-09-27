@@ -56,9 +56,6 @@ func main() {
 
 	// Initialize token encryption service (required for OAuth connections)
 	encryptionKey := cfg.TokenEncryptionKey
-	if encryptionKey == "" {
-		log.Fatal("TOKEN_ENCRYPTION_KEY environment variable is required (base64-encoded 32-byte key)")
-	}
 	encryptionService, err := crypto.NewEncryptionService(encryptionKey)
 	if err != nil {
 		log.Fatalf("Failed to initialize encryption service: %v", err)
