@@ -29,6 +29,9 @@ type Config struct {
 	OpenRouterAPIKey string
 	DeepSeekAPIKey   string
 
+	// Token encryption (AES-256-GCM key for OAuth credentials at rest)
+	TokenEncryptionKey string
+
 	// Flutterwave payments
 	FlutterwavePublicKey     string
 	FlutterwaveSecretKey     string
@@ -49,6 +52,12 @@ func LoadConfig() (*Config, error) {
 	cfg.DevMode = getValueAsBool(generalEnv, "DEV_MODE", false)
 
 	env1, _ := godotenv.Read(".env1")
+
+	// ── Token encryption (AES-256-GCM for stored OAuth credentials) ──
+	cfg.TokenEncryptionKey = getValue(env1, "TOKEN_ENCRYPTION_KEY", os.Getenv("TOKEN_ENCRYPTION_KEY"))
+	if cfg.TokenEncryptionKey == "" {
+		return nil, &ConfigError{Field: "TOKEN_ENCRYPTION_KEY", Msg: "base64-encoded 32-byte key is required"}
+	}
 
 	// ── Groq (primary) ──
 	cfg.GroqAPIKey = getValue(env1, "GROQ_API_KEY", os.Getenv("GROQ_API_KEY"))

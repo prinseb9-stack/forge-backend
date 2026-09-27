@@ -55,7 +55,7 @@ func main() {
 	)
 
 	// Initialize token encryption service (required for OAuth connections)
-	encryptionKey := os.Getenv("TOKEN_ENCRYPTION_KEY")
+	encryptionKey := cfg.TokenEncryptionKey
 	if encryptionKey == "" {
 		log.Fatal("TOKEN_ENCRYPTION_KEY environment variable is required (base64-encoded 32-byte key)")
 	}
