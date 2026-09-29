@@ -10,10 +10,10 @@ func (c *Connector) ID() string                    { return "tiktok" }
 func (c *Connector) Name() string                  { return "TikTok" }
 func (c *Connector) Icon() string                  { return "🎵" }
 func (c *Connector) Description() string           { return "Short-form video content." }
-func (c *Connector) Category() connectors.Category { return connectors.CategoryVisual }
+func (c *Connector) Category() connectors.Category { return connectors.CategoryVideo }
 func (c *Connector) Capabilities() connectors.Capabilities {
 	return connectors.Capabilities{
-		Connect:   connectors.StatusComingSoon,
+		Connect:   connectors.StatusPlanned,
 		Publish:   connectors.StatusPlanned,
 		Schedule:  connectors.StatusPlanned,
 		Analytics: connectors.StatusPlanned,
