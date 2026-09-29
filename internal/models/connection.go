@@ -20,6 +20,10 @@ const (
 type Connection struct {
 	// Platform identity
 	PlatformID string `firestore:"platformId" json:"platformId"`
+\n	// PlatformUserID is the platform's stable user identifier.
+	// Bluesky: DID (kept separately in DID below for legacy compatibility).
+	// TikTok:  open_id.
+	PlatformUserID string `firestore:"platformUserId,omitempty" json:"platformUserId,omitempty"`
 
 	// Platform-specific user identity
 	DID         string `firestore:"did" json:"did"`
