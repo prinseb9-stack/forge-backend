@@ -13,7 +13,7 @@ func (c *Connector) Description() string           { return "Decentralized short
 func (c *Connector) Category() connectors.Category { return connectors.CategorySocial }
 func (c *Connector) Capabilities() connectors.Capabilities {
 	return connectors.Capabilities{
-		Connect:   connectors.StatusComingSoon,
+		Connect:   connectors.StatusAvailable,
 		Publish:   connectors.StatusPlanned,
 		Schedule:  connectors.StatusPlanned,
 		Analytics: connectors.StatusPlanned,
