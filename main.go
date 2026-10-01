@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -74,10 +75,24 @@ func main() {
 
 	agnesImageService := services.NewAgnesImageService(cfg.AgnesAPIKey, cfg.AgnesBaseURL)
 	generateImageHandler := handlers.NewGenerateImageHandler(agnesImageService, firestoreService)
+	// ─── Cloudflare R2 (media studio) ───
+	var r2Service *services.R2Service
+	if r2Cfg, err := services.LoadR2ConfigFromEnv(); err != nil {
+		log.Printf("ℹ️  R2 not configured — /api/upload/presign disabled: %v", err)
+	} else {
+		r2Service, err = services.NewR2Service(context.Background(), r2Cfg)
+		if err != nil {
+			log.Printf("⚠️  Failed to initialize R2 service — /api/upload/presign disabled: %v", err)
+			r2Service = nil
+		} else {
+			log.Printf("✅ R2 storage configured (bucket=%s)", r2Cfg.BucketName)
+		}
+	}
 
 	meHandler := handlers.NewMeHandler(firestoreService)
 	connectorsHandler := handlers.NewConnectorsHandler()
 
+	uploadHandler := handlers.NewUploadHandler(r2Service, firestoreService)
 	// OAuth: Bluesky + connections
 	blueskyClient := oauth.NewBlueskyClient()
 	blueskyHandler := handlers.NewBlueskyHandler(blueskyClient, firestoreService)
@@ -147,6 +162,10 @@ func main() {
 		// OAuth connections
 		r.Post("/api/oauth/bluesky/connect", blueskyHandler.HandleConnect)
 		r.Post("/api/oauth/bluesky/disconnect", blueskyHandler.HandleDisconnect)
+		// ─── Media Studio: presigned upload (Phase 1) ───
+		if r2Service != nil {
+			r.Post("/api/upload/presign", uploadHandler.ServeHTTP)
+		}
 		r.Get("/api/connections", connectionsHandler.ServeHTTP)
 	})
 
