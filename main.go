@@ -93,6 +93,7 @@ func main() {
 	connectorsHandler := handlers.NewConnectorsHandler()
 
 	uploadHandler := handlers.NewUploadHandler(r2Service, firestoreService)
+	editImageHandler := handlers.NewEditImageHandler(agnesImageService, r2Service, firestoreService)
 	// OAuth: Bluesky + connections
 	blueskyClient := oauth.NewBlueskyClient()
 	blueskyHandler := handlers.NewBlueskyHandler(blueskyClient, firestoreService)
@@ -165,6 +166,7 @@ func main() {
 		// ─── Media Studio: presigned upload (Phase 1) ───
 		if r2Service != nil {
 			r.Post("/api/upload/presign", uploadHandler.ServeHTTP)
+			r.Post("/api/edit/image", editImageHandler.ServeHTTP)
 		}
 		r.Get("/api/connections", connectionsHandler.ServeHTTP)
 	})

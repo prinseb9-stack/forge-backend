@@ -483,6 +483,34 @@ func (s *FirestoreService) SaveImageGeneration(
 	return nil
 }
 
+// SaveEditGeneration writes metadata about an edited image to
+// users/{uid}/edits/{id}. Non-fatal: callers log but continue on error.
+func (s *FirestoreService) SaveEditGeneration(
+	ctx context.Context,
+	uid string,
+	id string,
+	prompt string,
+	sourceKey string,
+	resultKey string,
+	resultURL string,
+	size string,
+) error {
+	_, err := s.client.Collection("users").Doc(uid).
+		Collection("edits").Doc(id).
+		Set(ctx, models.EditGeneration{
+			ID:        id,
+			Kind:      "image-edit",
+			Prompt:    prompt,
+			Model:     "agnes-image-2.1-flash",
+			SourceKey: sourceKey,
+			ResultKey: resultKey,
+			ResultURL: resultURL,
+			Size:      size,
+			CreatedAt: time.Now().UTC(),
+		})
+	return err
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // TEXT GENERATION HISTORY
 // ═══════════════════════════════════════════════════════════════════

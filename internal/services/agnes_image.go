@@ -129,3 +129,74 @@ func (s *AgnesImageService) doImageRequest(url string, body []byte) (string, str
 
 	return result.Data[0].URL, result.TaskID, nil
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Image-to-image editing (Media Studio Phase 1)
+//
+// Agnes accepts a source image URL via extra_body.image. The URL must be
+// publicly reachable (we use a short-lived presigned R2/B2 GET URL).
+// ═══════════════════════════════════════════════════════════════════
+
+type agnesEditRequest struct {
+	Model     string                 `json:"model"`
+	Prompt    string                 `json:"prompt"`
+	N         int                    `json:"n"`
+	Size      string                 `json:"size"`
+	ExtraBody map[string]interface{} `json:"extra_body,omitempty"`
+}
+
+// EditImage sends a source image + prompt to Agnes and returns the
+// edited image URL and task ID.
+func (s *AgnesImageService) EditImage(prompt, sourceURL, size string) (string, string, error) {
+	if s.APIKey == "" {
+		return "", "", fmt.Errorf("Agnes API key is not configured")
+	}
+	if sourceURL == "" {
+		return "", "", fmt.Errorf("source image URL is required")
+	}
+	if prompt == "" {
+		return "", "", fmt.Errorf("prompt is required")
+	}
+	if size == "" {
+		size = "1024x1024"
+	}
+
+	reqBody := agnesEditRequest{
+		Model:  "agnes-image-2.1-flash",
+		Prompt: prompt,
+		N:      1,
+		Size:   size,
+		ExtraBody: map[string]interface{}{
+			"image": []string{sourceURL},
+		},
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to encode edit request: %w", err)
+	}
+
+	url := s.BaseURL + "/images/generations"
+
+	delays := []time.Duration{0, 5 * time.Second, 15 * time.Second}
+	var lastErr error
+
+	for _, delay := range delays {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+
+		imgURL, taskID, err := s.doImageRequest(url, body)
+		if err == nil {
+			return imgURL, taskID, nil
+		}
+		lastErr = err
+
+		errStr := err.Error()
+		if strings.Contains(errStr, "HTTP status 4") && !strings.Contains(errStr, "429") {
+			return "", "", err
+		}
+	}
+
+	return "", "", fmt.Errorf("image edit failed after %d attempts: %w", len(delays), lastErr)
+}
