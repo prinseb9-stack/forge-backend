@@ -50,14 +50,15 @@ type PresignRequest struct {
 }
 
 type PresignResponse struct {
-	Success   bool       `json:"success"`
-	UploadURL string     `json:"uploadUrl,omitempty"`
-	ObjectKey string     `json:"objectKey,omitempty"`
-	ExpiresAt string     `json:"expiresAt,omitempty"`
-	Plan      string     `json:"plan,omitempty"`
-	Usage     *UsageInfo `json:"usage,omitempty"`
-	Error     string     `json:"error,omitempty"`
-	Code      string     `json:"code,omitempty"`
+	Success       bool       `json:"success"`
+	UploadURL     string     `json:"uploadUrl,omitempty"`
+	ObjectKey     string     `json:"objectKey,omitempty"`
+	ReservationID string     `json:"reservationId,omitempty"`
+	ExpiresAt     string     `json:"expiresAt,omitempty"`
+	Plan          string     `json:"plan,omitempty"`
+	Usage         *UsageInfo `json:"usage,omitempty"`
+	Error         string     `json:"error,omitempty"`
+	Code          string     `json:"code,omitempty"`
 }
 
 type UploadHandler struct {
@@ -190,11 +191,12 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().UTC().Add(PresignExpiry).Format(time.RFC3339)
 
 	jsonResponse(w, http.StatusOK, PresignResponse{
-		Success:   true,
-		UploadURL: uploadURL,
-		ObjectKey: objectKey,
-		ExpiresAt: expiresAt,
-		Plan:      string(user.Plan),
-		Usage:     buildUsageInfo(periodAfter),
+		Success:       true,
+		UploadURL:     uploadURL,
+		ObjectKey:     objectKey,
+		ReservationID: reservationID,
+		ExpiresAt:     expiresAt,
+		Plan:          string(user.Plan),
+		Usage:         buildUsageInfo(periodAfter),
 	})
 }
