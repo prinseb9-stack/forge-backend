@@ -75,17 +75,25 @@ func main() {
 
 	agnesImageService := services.NewAgnesImageService(cfg.AgnesAPIKey, cfg.AgnesBaseURL)
 	generateImageHandler := handlers.NewGenerateImageHandler(agnesImageService, firestoreService)
-	// ─── Cloudflare R2 (media studio) ───
+	// ─── Storage (S3-compatible: B2 / R2) ───
 	var r2Service *services.R2Service
-	if r2Cfg, err := services.LoadR2ConfigFromEnv(); err != nil {
-		log.Printf("ℹ️  R2 not configured — /api/upload/presign disabled: %v", err)
+	r2Cfg := services.R2Config{
+		AccessKeyID:     cfg.R2AccessKeyID,
+		SecretAccessKey: cfg.R2SecretAccessKey,
+		BucketName:      cfg.R2BucketName,
+		Endpoint:        cfg.R2Endpoint,
+		Region:          cfg.R2Region,
+	}
+	if r2Cfg.AccessKeyID == "" || r2Cfg.BucketName == "" || (r2Cfg.Endpoint == "" && r2Cfg.AccountID == "") {
+		log.Printf("ℹ️  Storage not configured — /api/upload/presign disabled")
 	} else {
-		r2Service, err = services.NewR2Service(context.Background(), r2Cfg)
-		if err != nil {
-			log.Printf("⚠️  Failed to initialize R2 service — /api/upload/presign disabled: %v", err)
+		var r2Err error
+		r2Service, r2Err = services.NewR2Service(context.Background(), r2Cfg)
+		if r2Err != nil {
+			log.Printf("⚠️  Failed to initialize storage — /api/upload/presign disabled: %v", r2Err)
 			r2Service = nil
 		} else {
-			log.Printf("✅ R2 storage configured (bucket=%s)", r2Cfg.BucketName)
+			log.Printf("✅ Storage configured (bucket=%s)", r2Cfg.BucketName)
 		}
 	}
 

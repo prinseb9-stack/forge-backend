@@ -32,6 +32,13 @@ type Config struct {
 	// Token encryption (AES-256-GCM key for OAuth credentials at rest)
 	TokenEncryptionKey string
 
+	// Storage (S3-compatible: Backblaze B2 or Cloudflare R2)
+	R2AccessKeyID     string
+	R2SecretAccessKey string
+	R2BucketName      string
+	R2Endpoint        string
+	R2Region          string
+
 	// Flutterwave payments
 	FlutterwavePublicKey     string
 	FlutterwaveSecretKey     string
@@ -58,6 +65,13 @@ func LoadConfig() (*Config, error) {
 	if cfg.TokenEncryptionKey == "" {
 		return nil, &ConfigError{Field: "TOKEN_ENCRYPTION_KEY", Msg: "base64-encoded 32-byte key is required"}
 	}
+
+	// ── Storage (S3-compatible: B2 / R2) ──
+	cfg.R2AccessKeyID = getValue(env1, "R2_ACCESS_KEY_ID", os.Getenv("R2_ACCESS_KEY_ID"))
+	cfg.R2SecretAccessKey = getValue(env1, "R2_SECRET_ACCESS_KEY", os.Getenv("R2_SECRET_ACCESS_KEY"))
+	cfg.R2BucketName = getValue(env1, "R2_BUCKET_NAME", os.Getenv("R2_BUCKET_NAME"))
+	cfg.R2Endpoint = getValue(env1, "R2_ENDPOINT", os.Getenv("R2_ENDPOINT"))
+	cfg.R2Region = getValue(env1, "R2_REGION", os.Getenv("R2_REGION"))
 
 	// ── Groq (primary) ──
 	cfg.GroqAPIKey = getValue(env1, "GROQ_API_KEY", os.Getenv("GROQ_API_KEY"))
