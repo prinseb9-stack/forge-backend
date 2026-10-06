@@ -31,9 +31,10 @@ const (
 )
 
 type EditImageRequest struct {
-	ObjectKey string `json:"objectKey"`
-	Prompt    string `json:"prompt"`
-	Size      string `json:"size"`
+	ObjectKey     string `json:"objectKey"`
+	Prompt        string `json:"prompt"`
+	Size          string `json:"size"`
+	ReservationID string `json:"reservationId"`
 }
 
 type EditImageResult struct {
@@ -161,11 +162,22 @@ func (h *EditImageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Call Agnes with image-to-image
 	editedURL, taskID, err := h.imageService.EditImage(req.Prompt, sourceURL, req.Size)
 	if err != nil {
+		if req.ReservationID != "" {
+			if refundErr := h.firestoreService.RefundImageGeneration(r.Context(), uid, req.ReservationID); refundErr != nil {
+				log.Printf("🚨 Edit refund failed uid=%s res=%s: %v", uid, req.ReservationID, refundErr)
+			}
+		}
 		log.Printf("🔥 Edit failed uid=%s: %v", uid, err)
 		jsonResponse(w, http.StatusInternalServerError, EditImageResponse{
 			Success: false, Error: "Failed to edit image", Code: "EDIT_FAILED",
 		})
 		return
+	}
+
+	if req.ReservationID != "" {
+		if err := h.firestoreService.ConsumeImageGeneration(r.Context(), uid, req.ReservationID); err != nil {
+			log.Printf("⚠️  Edit consume failed uid=%s res=%s: %v", uid, req.ReservationID, err)
+		}
 	}
 
 	genID := taskID
